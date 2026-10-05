@@ -1,0 +1,69 @@
+name: Build VoxCPM2 iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install CMake
+        run: brew install cmake
+
+      -       - name: Build llama.xcframework
+        run: |
+          chmod +x scripts/build_xcframework.sh
+          ./scripts/build_xcframework.sh
+
+          echo "Checking generated framework..."
+          find . -name "llama.xcframework" -type d -print
+
+          mkdir -p MiniCPM-V-demo/thirdparty
+
+          FRAMEWORK=$(find . -name "llama.xcframework" -type d | head -n 1)
+
+          if [ -z "$FRAMEWORK" ]; then
+            echo "ERROR: llama.xcframework was not generated"
+            exit 1
+          fi
+
+          cp -R "$FRAMEWORK" MiniCPM-V-demo/thirdparty/llama.xcframework
+
+          echo "Framework installed:"
+          ls -la MiniCPM-V-demo/thirdparty/llama.xcframework
+
+      - name: Build iOS archive
+        run: |
+          xcodebuild \
+            -project MiniCPM-V-demo.xcodeproj \
+            -scheme MiniCPM-V-demo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/MiniCPM-V-demo.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+
+      - name: Package IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R \
+            "build/MiniCPM-V-demo.xcarchive/Products/Applications/MiniCPM-V-demo.app" \
+            build/Payload/
+
+          cd build
+          zip -r VoxCPM2-iOS-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxCPM2-iOS
+          path: build/VoxCPM2-iOS-unsigned.ipa
